@@ -3,50 +3,51 @@ name: Deploy PHP HTML Site
 on:
   push:
     branches:
-      - main
+      - main  # Deployment wird ausgelöst, wenn auf main gepusht wird
  
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
- 
-      - name: Upload Website Files
-        uses: actions/upload-artifact@v4
-        with:
-          name: site
-          path: .  # Das gesamte Repository hochladen
- 
-      - name: Download Website Files
-        uses: actions/download-artifact@v4
-        with:
-          name: site
-          path: .
- 
-      - name: Deploy to Server
+
+      - name: Deploy to EC2 Server
         env:
-          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}  # PEM-Schlüssel aus GitHub Secrets
+          EC2_HOST: ${{ secrets.EC2_HOST }}  # EC2-IP aus GitHub Secrets
         run: |
-          # SSH Key speichern
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > labsuser.pem
-          chmod 600 labsuser.pem  # Sicherstellen, dass der Schlüssel die richtigen Berechtigungen hat
-          # Verbindung zum Server und sicherstellen, dass das Verzeichnis vorhanden ist
-          ssh -v -i labsuser.pem -o StrictHostKeyChecking=no ubuntu@54.90.88.249 << 'EOF'  
-            # Sicherstellen, dass das Verzeichnis existiert
+          # SSH-Schlüssel speichern & Berechtigungen setzen
+          echo "$SSH_KEY" | tr -d '\r' > labsuser.pem
+          chmod 600 labsuser.pem
+
+          # SSH-Verbindung testen
+          ssh -i labsuser.pem -o StrictHostKeyChecking=no ubuntu@$EC2_HOST "echo 'SSH Connection Successful'"
+
+          # Deployment-Prozess auf EC2 ausführen
+          ssh -i labsuser.pem -o StrictHostKeyChecking=no ubuntu@$EC2_HOST << 'EOF'
+            set -e  # Stoppt das Skript bei Fehlern
+            
+            # Wechsel ins Web-Verzeichnis
             sudo mkdir -p /var/www/html
- 
-            # Überprüfen, ob das Verzeichnis ein Git-Repository ist
             cd /var/www/html || exit 1
+            
+            # Prüfen, ob es ein Git-Repository ist
             if [ ! -d ".git" ]; then
-              # Wenn es kein Git-Repository ist, dann Repository klonen
               sudo git clone https://github.com/deinbenutzername/deinrepository.git .
             fi
- 
-            # Git Pull vom 'main' Branch
+            
+            # Sicherstellen, dass keine lokalen Änderungen stören
             sudo git reset --hard
-            sudo git pull origin main  # Pull vom 'main' Branch
-            sudo chmod -R 777 /var/www/html  # Setze die richtigen Berechtigungen
+            sudo git pull origin main  # Neueste Änderungen holen
+            
+            # Richtige Berechtigungen setzen
+            sudo chmod -R 755 /var/www/html
+            
+            # Apache neustarten, falls nötig
+            sudo systemctl restart apache2
           EOF
-          # SSH Key löschen
-          rm labsuser.pem
+
+          # SSH Key aus Sicherheitsgründen löschen
+          rm -f labsuser.pem
