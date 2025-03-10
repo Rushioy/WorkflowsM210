@@ -3,51 +3,33 @@ name: Deploy PHP HTML Site
 on:
   push:
     branches:
-      - main  # Deployment wird ausgelöst, wenn auf main gepusht wird
+      - main
  
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
-      - name: Deploy to EC2 Server
+ 
+      - name: Deploy to Server
         env:
-          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}  # PEM-Schlüssel aus GitHub Secrets
-          EC2_HOST: ${{ secrets.EC2_HOST }}  # EC2-IP aus GitHub Secrets
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SERVER_IP: ${{ secrets.ec2-54-90-88-249.compute-1.amazonaws.com}}  # Die IP-Adresse der EC2-Instanz aus Secrets
         run: |
-          # SSH-Schlüssel speichern & Berechtigungen setzen
-          echo "$SSH_KEY" | tr -d '\r' > labsuser.pem
-          chmod 600 labsuser.pem
-
-          # SSH-Verbindung testen
-          ssh -i labsuser.pem -o StrictHostKeyChecking=no ubuntu@$EC2_HOST "echo 'SSH Connection Successful'"
-
-          # Deployment-Prozess auf EC2 ausführen
-          ssh -i labsuser.pem -o StrictHostKeyChecking=no ubuntu@$EC2_HOST << 'EOF'
-            set -e  # Stoppt das Skript bei Fehlern
-            
-            # Wechsel ins Web-Verzeichnis
-            sudo mkdir -p /var/www/html
-            cd /var/www/html || exit 1
-            
-            # Prüfen, ob es ein Git-Repository ist
-            if [ ! -d ".git" ]; then
-              sudo git clone https://github.com/deinbenutzername/deinrepository.git .
-            fi
-            
-            # Sicherstellen, dass keine lokalen Änderungen stören
-            sudo git reset --hard
-            sudo git pull origin main  # Neueste Änderungen holen
-            
-            # Richtige Berechtigungen setzen
-            sudo chmod -R 755 /var/www/html
-            
-            # Apache neustarten, falls nötig
-            sudo systemctl restart apache2
+          # SSH Key speichern
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" | tr -d '\r' > private_key.pem
+          chmod 600 private_key.pem
+          # Git-Pull direkt auf dem Server ausführen
+          ssh -i private_key.pem -o StrictHostKeyChecking=no ubuntu@54.90.88.249 << 'EOF'
+ 
+            cd /var/www/html
+            # git fetch --all
+            git reset --hard origin/main  # Setzt den Code auf die letzte GitHub-Version zurück
+            git pull origin main
+             #sudo chown -R www-data:www-data /var/www/html  # Besitzer setzen
+            sudo chmod -R 777 /var/www/html  # Sichere Berechtigungen setzen
+            # sudo systemctl restart apache2  # Apache neustarten
           EOF
-
-          # SSH Key aus Sicherheitsgründen löschen
-          rm -f labsuser.pem
+          # SSH Key löschen
+          rm private_key.pem
